@@ -40,8 +40,8 @@ export class RoadPath {
     this.samples = [];
     this.sections = [];
 
-    // Starter section: s = -150 to s = 80, heading = 0
-    const startS = -150;
+    // Starter section: s = -800 to s = 80, heading = 0 (bounded reverse retention)
+    const startS = -800;
     const endS = 80;
     const starterSection: RoadSection = {
       startS,
@@ -157,9 +157,12 @@ export class RoadPath {
   public pruneBefore(minS: number): void {
     if (this.samples.length === 0) return;
 
+    // Retain starter route down to -800m so reverse travel is bounded by ~600m without reading pruned state
+    const safeMinS = Math.max(minS, -800);
+
     let pruneIndex = 0;
-    // Keep at least two samples behind minS for interpolation
-    while (pruneIndex < this.samples.length - 4 && (this.samples[pruneIndex + 2]?.s ?? 0) < minS) {
+    // Keep at least two samples behind safeMinS for interpolation
+    while (pruneIndex < this.samples.length - 4 && (this.samples[pruneIndex + 2]?.s ?? 0) < safeMinS) {
       pruneIndex++;
     }
 
@@ -168,7 +171,7 @@ export class RoadPath {
     }
 
     // Also prune completed sections that are far behind
-    while (this.sections.length > 1 && (this.sections[0]?.endS ?? 0) < minS - 50) {
+    while (this.sections.length > 1 && (this.sections[0]?.endS ?? 0) < safeMinS - 50) {
       this.sections.shift();
       if (this.currentSectionIndex > 0) {
         this.currentSectionIndex--;

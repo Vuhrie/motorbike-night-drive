@@ -20,11 +20,15 @@ import { RoadRenderer } from './RoadRenderer';
 import { RoadLighting } from './RoadLighting';
 import { Scenery } from './Scenery';
 import { SkySystem } from './SkySystem';
-import { Stars } from './Stars';
 
 export class Game {
   private canvas: HTMLCanvasElement;
   private instructionsEl: HTMLElement | null;
+  private speedValEl: HTMLElement | null;
+  private statusValEl: HTMLElement | null;
+  private autoDriveBtn: HTMLButtonElement | null;
+  private autoDriveStateEl: HTMLElement | null;
+
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private cameraRig: CameraRig;
@@ -33,7 +37,6 @@ export class Game {
   private roadRenderer: RoadRenderer;
   private roadLighting: RoadLighting;
   private scenery: Scenery;
-  private stars: Stars;
   private skySystem: SkySystem;
   private bike: Bike;
   private input: Input;
@@ -58,10 +61,15 @@ export class Game {
   private lastRebaseDistance = 0;
   private prevModeBeforeHide: 'ready' | 'running' = 'ready';
 
+  private lastHudSpeed = -999;
+  private lastHudStatus = '';
+  private onAutoDriveClick: () => void;
+
   private onResize: () => void;
   private onMotionChange: (e: MediaQueryListEvent) => void;
   private onVisibilityChange: () => void;
   private motionQuery: MediaQueryList;
+  private readonly skyDrawingBufferSize = new THREE.Vector2();
 
   // Dev diagnostic log timer
   private lastDiagTime = 0;
@@ -69,6 +77,10 @@ export class Game {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.instructionsEl = document.getElementById('game-instructions');
+    this.speedValEl = document.getElementById('hud-speed-value');
+    this.statusValEl = document.getElementById('hud-status-value');
+    this.autoDriveBtn = document.getElementById('btn-autodrive') as HTMLButtonElement | null;
+    this.autoDriveStateEl = document.getElementById('hud-autodrive-state');
 
     const seed = getCryptoSeed();
     this.currentProfile = this.detectProfile();
@@ -99,9 +111,11 @@ export class Game {
     const dirLight = new THREE.DirectionalLight(PALETTE.directionalLight, 1.25);
     dirLight.castShadow = false;
 
-    // 4. Initial Ride State
+    // 4. Initial Ride State with manual mode by default
     this.state = {
       mode: 'ready',
+      driveMode: 'manual',
+      throttleInput: 0,
       distanceAlongRoad: 0,
       speed: 0,
       targetSpeed: 0,
@@ -129,10 +143,6 @@ export class Game {
     this.roadLighting = new RoadLighting(this.currentProfile);
     this.scene.add(this.roadLighting.group);
 
-    this.stars = new Stars(seed);
-    this.stars.setProfile(this.currentProfile);
-    this.scene.add(this.stars.group);
-
     this.bike = new Bike();
     this.scene.add(this.bike.group);
 
@@ -148,12 +158,23 @@ export class Game {
     this.roadPath.getPose(0, this.currentPose);
     this.roadRenderer.update(0, this.roadPath, this.currentProfile);
     this.roadLighting.update(0, this.roadPath, this.currentProfile);
+
     this.bike.updateOffRoad(this.state);
     this.bike.updateVisuals(this.state, this.currentPose, 0.016, this.reducedMotion);
     this.scenery.update(0, this.currentPose, this.roadPath, this.currentProfile, 0.016, this.reducedMotion);
     this.cameraRig.update(this.bike.group.position, this.currentPose, 0, 0.016, this.reducedMotion);
 
-    // 6. Viewport & Listeners
+    // 6. HUD setup & listeners
+    this.onAutoDriveClick = () => {
+      this.toggleAutoDrive();
+    };
+    if (this.autoDriveBtn) {
+      this.autoDriveBtn.addEventListener('click', this.onAutoDriveClick);
+    }
+    this.syncAutoDriveButton();
+    this.updateHUD();
+
+    // 7. Viewport & Listeners
     this.onResize = () => this.handleResize();
     this.onMotionChange = (e: MediaQueryListEvent) => {
       this.reducedMotion = e.matches;
@@ -200,8 +221,12 @@ export class Game {
     this.renderer.setSize(width, height, false);
     this.cameraRig.setViewport(width, height);
 
+    const skyDrawingBufferSize = this.skyDrawingBufferSize;
+    const skyDomeMaterial = this.skySystem.skyDome.skyDomeMaterial;
+    this.renderer.getDrawingBufferSize(skyDrawingBufferSize);
+    skyDomeMaterial.uniforms.uResolution.value.copy(skyDrawingBufferSize);
+
     if (profileChanged) {
-      this.stars.setProfile(this.currentProfile);
       this.skySystem.setProfile(this.currentProfile);
       this.roadRenderer.invalidateAllSlots();
       this.roadLighting.setProfile(this.currentProfile);
@@ -215,6 +240,60 @@ export class Game {
       this.state.startElapsedTime = this.state.elapsedTime;
       if (this.instructionsEl) {
         this.instructionsEl.classList.add('hidden');
+      }
+    }
+  }
+
+  private toggleAutoDrive(): void {
+    if (this.state.driveMode === 'manual') {
+      this.state.driveMode = 'autodrive';
+      if (this.state.mode === 'ready') {
+        this.handleStartRequest();
+      }
+    } else {
+      this.state.driveMode = 'manual';
+    }
+    this.syncAutoDriveButton();
+  }
+
+  private syncAutoDriveButton(): void {
+    if (!this.autoDriveBtn) return;
+    const isAuto = this.state.driveMode === 'autodrive';
+    this.autoDriveBtn.setAttribute('aria-pressed', isAuto ? 'true' : 'false');
+    this.autoDriveBtn.classList.toggle('active', isAuto);
+    if (this.autoDriveStateEl) {
+      this.autoDriveStateEl.textContent = isAuto ? 'ON' : 'OFF';
+    }
+  }
+
+  private updateHUD(): void {
+    if (this.speedValEl) {
+      const dispSpeed = Math.round(Math.abs(this.state.speed));
+      if (dispSpeed !== this.lastHudSpeed) {
+        this.speedValEl.textContent = dispSpeed.toString();
+        this.lastHudSpeed = dispSpeed;
+      }
+    }
+
+    if (this.statusValEl) {
+      let status = 'READY';
+      if (this.state.mode === 'paused') {
+        status = 'PAUSED';
+      } else if (this.state.mode === 'running') {
+        if (this.state.driveMode === 'autodrive') {
+          status = this.state.offRoadAmount > 0.4 ? 'AUTO [DIRT]' : 'AUTO-DRIVE';
+        } else if (this.state.speed < -0.4) {
+          status = this.state.offRoadAmount > 0.4 ? 'REV [DIRT]' : 'REVERSE';
+        } else if (this.state.speed > 0.4) {
+          status = this.state.offRoadAmount > 0.4 ? 'FWD [DIRT]' : 'FORWARD';
+        } else {
+          status = 'NEUTRAL';
+        }
+      }
+
+      if (status !== this.lastHudStatus) {
+        this.statusValEl.textContent = status;
+        this.lastHudStatus = status;
       }
     }
   }
@@ -246,8 +325,9 @@ export class Game {
     if (this.state.mode !== 'paused') {
       this.state.elapsedTime += dt;
 
-      // 2. Read input
+      // 2. Read input (steer & throttle)
       this.state.steerInput = this.input.getSteer();
+      this.state.throttleInput = this.input.getThrottle();
 
       // 3. Lateral dynamics
       this.bike.updateLateralDynamics(this.state, dt);
@@ -255,10 +335,10 @@ export class Game {
       // 4. Off-road
       this.bike.updateOffRoad(this.state);
 
-      // 5. Speed
+      // 5. Speed (manual throttle / autodrive)
       this.bike.updateSpeed(this.state, dt);
 
-      // 6. Distance
+      // 6. Distance (bounded by reverse boundary)
       this.bike.updateDistance(this.state, dt);
 
       // 7. Generate/prune path
@@ -284,13 +364,7 @@ export class Game {
       // 12. Mountains
       this.scenery.updateMountains(this.currentPose, dt, this.reducedMotion);
 
-      // 13. Stars & Sky
-      this.stars.update(
-        this.cameraRig.camera.position,
-        this.state.elapsedTime,
-        this.currentProfile,
-        this.reducedMotion
-      );
+      // 13. SkySystem updates (fog-free celestial dome, aurora, moon, shooting stars)
       this.skySystem.update(dt, this.currentProfile, this.reducedMotion);
 
       // 14. Camera
@@ -301,9 +375,12 @@ export class Game {
         dt,
         this.reducedMotion
       );
+
+      // 15. Update HUD without per-frame allocations
+      this.updateHUD();
     }
 
-    // 15. Render: Fog-free SkySystem pass before gameplay scene
+    // 16. Render: Fog-free SkySystem pass before gameplay scene
     this.renderer.clear();
     this.skySystem.render(this.renderer, this.cameraRig.camera);
     this.renderer.clearDepth();
@@ -314,7 +391,7 @@ export class Game {
       this.lastDiagTime = this.state.elapsedTime;
       if (import.meta.env.DEV) {
         console.debug(
-          `[Night Ride Diag] calls=${this.renderer.info.render.calls} geoms=${this.renderer.info.memory.geometries} dist=${Math.round(this.state.distanceAlongRoad)}m speed=${this.state.speed.toFixed(1)}m/s profile=${this.currentProfile.id}`
+          `[Night Ride Diag] calls=${this.renderer.info.render.calls} geoms=${this.renderer.info.memory.geometries} dist=${Math.round(this.state.distanceAlongRoad)}m speed=${this.state.speed.toFixed(1)}m/s mode=${this.state.driveMode} profile=${this.currentProfile.id}`
         );
       }
     }
@@ -354,9 +431,14 @@ export class Game {
     window.removeEventListener('orientationchange', this.onResize);
     this.motionQuery.removeEventListener('change', this.onMotionChange);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+
+    if (this.autoDriveBtn) {
+      this.autoDriveBtn.removeEventListener('click', this.onAutoDriveClick);
+    }
+
+    this.input.dispose();
     this.roadLighting.dispose();
     this.skySystem.dispose();
-    this.stars.dispose();
     this.renderer.dispose();
   }
 }

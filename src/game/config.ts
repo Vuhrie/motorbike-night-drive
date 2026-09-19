@@ -1,7 +1,11 @@
 export type GameMode = 'ready' | 'running' | 'paused';
+export type DriveMode = 'manual' | 'autodrive';
+export type ThrottleInput = -1 | 0 | 1;
 
 export interface RideState {
   mode: GameMode;
+  driveMode: DriveMode;
+  throttleInput: ThrottleInput;
   distanceAlongRoad: number;
   speed: number;
   targetSpeed: number;
@@ -86,6 +90,11 @@ export const CENTER_FORCE_THRESHOLD_1 = 4.2;
 export const CENTER_FORCE_THRESHOLD_2 = 6.0;
 
 export const CRUISE_SPEED = 22;
+export const FORWARD_SPEED = 44;
+export const REVERSE_SPEED = -18;
+export const OFF_ROAD_FORWARD_SPEED = 24;
+export const OFF_ROAD_REVERSE_SPEED = -10;
+export const REVERSE_LIMIT_DISTANCE = -600;
 export const OFF_ROAD_TARGET_SPEED = 12;
 export const STARTUP_EASE_DURATION = 1.75;
 

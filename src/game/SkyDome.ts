@@ -11,27 +11,40 @@ export class SkyDome {
     return this.mesh;
   }
 
+  public readonly material: THREE.ShaderMaterial & {
+    uniforms: {
+      uMilkyWay: { value: THREE.DataTexture };
+      uResolution: { value: THREE.Vector2 };
+      uTime: { value: number };
+      [key: string]: THREE.IUniform;
+    };
+  };
+  public get skyDomeMaterial() {
+    return this.material;
+  }
+
+  public readonly uResolution: THREE.Vector2;
+
   private geometry: THREE.SphereGeometry;
-  private material: THREE.ShaderMaterial;
   private texture: THREE.DataTexture;
 
   constructor(profile: RendererProfile) {
     const [width, height] = profile.skyDomeResolution;
     this.texture = this.generateSkyTexture(width, height);
+    this.uResolution = new THREE.Vector2(1920, 1080);
 
     this.geometry = new THREE.SphereGeometry(9.5, 32, 24);
-    this.material = new THREE.ShaderMaterial({
+    const material = new THREE.ShaderMaterial({
       uniforms: {
         uMilkyWay: { value: this.texture },
+        uResolution: { value: this.uResolution },
+        uTime: { value: 0.0 },
       },
       vertexShader: `
   varying vec2 vUv;
-  varying vec3 vDirection;
 
   void main() {
     vUv = uv;
-    vDirection = normalize(position);
-
     gl_Position =
       projectionMatrix *
       modelViewMatrix *
@@ -40,44 +53,26 @@ export class SkyDome {
 `,
       fragmentShader: `
   uniform sampler2D uMilkyWay;
-
+  uniform vec2 uResolution;
+  uniform float uTime;
   varying vec2 vUv;
-  varying vec3 vDirection;
 
   void main() {
-    vec3 direction = normalize(vDirection);
+    vec2 screenUv = clamp(gl_FragCoord.xy / max(uResolution, vec2(1.0)), 0.0, 1.0);
+    vec3 skyColor = mix(vec3(0.0060, 0.0120, 0.0300), vec3(0.0015, 0.0035, 0.0110), smoothstep(0.05, 0.95, screenUv.y));
 
-    float horizonDistance = abs(direction.y);
-    float horizonGlow = pow(max(0.0, 1.0 - horizonDistance), 1.65);
+    vec3 textureDetail = texture2D(uMilkyWay, screenUv).rgb;
+    float existingGalaxyNoise = clamp(dot(textureDetail, vec3(0.25, 0.35, 0.40)) * 2.0, 0.0, 1.0);
 
-    vec3 zenith = vec3(0.018, 0.045, 0.085);
-    vec3 horizon = vec3(0.095, 0.195, 0.335);
-
-    vec3 color = mix(zenith, horizon, horizonGlow * 0.82);
-
-    float bandCoordinate = (direction.y - 0.34 - direction.x * 0.44) * 0.915315;
-    float bandDistance = abs(bandCoordinate);
-    float milkyCore = 1.0 - smoothstep(0.050, 0.125, bandDistance);
-    float milkyHaze = 1.0 - smoothstep(0.115, 0.260, bandDistance);
-    float forwardMask = smoothstep(-0.30, 0.16, -direction.z);
-    float milkyWayMask = (milkyHaze * 0.36 + milkyCore * 0.64) * forwardMask;
-
-    vec3 textureDetail = texture2D(uMilkyWay, vUv).rgb;
-    float milkyNoise = dot(textureDetail, vec3(0.25, 0.35, 0.40)) * 2.0;
-    float milkyDetail = mix(0.65, 1.0, clamp(milkyNoise, 0.0, 1.0));
-    float milkyWay = milkyWayMask * milkyDetail;
-
-    vec3 galaxyColor = vec3(0.20, 0.255, 0.39) + vec3(0.105, 0.080, 0.155);
-
-    float dustCoordinate = bandCoordinate - 0.020;
-    float dustLane = exp(-(dustCoordinate * dustCoordinate) / 0.00060);
-    galaxyColor *= 1.0 - dustLane * 0.22;
-
-    color += galaxyColor * (milkyWay * 0.22);
-
-    gl_FragColor = vec4(color, 1.0);
-
-    #include <tonemapping_fragment>
+    float centerY = 0.94 - 0.025 * screenUv.x;
+    float d = abs(screenUv.y - centerY);
+    float core = 1.0 - smoothstep(0.012, 0.030, d);
+    float dust = 1.0 - smoothstep(0.030, 0.050, d);
+    float along = smoothstep(0.06, 0.15, screenUv.x) * (1.0 - smoothstep(0.85, 0.95, screenUv.x));
+    float structure = 0.78 + 0.22 * existingGalaxyNoise;
+    skyColor += vec3(0.075, 0.085, 0.235) * core * along * structure;
+    skyColor += vec3(0.024, 0.014, 0.062) * dust * along * structure;
+    gl_FragColor = vec4(skyColor, 1.0);
     #include <colorspace_fragment>
   }
 `,
@@ -86,13 +81,18 @@ export class SkyDome {
       depthTest: false,
       depthWrite: false,
       fog: false,
-      toneMapped: true,
+      toneMapped: false,
     });
+    this.material = material as typeof this.material;
 
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 0;
+    this.mesh.renderOrder = -10000;
     this.mesh.layers.set(0);
+  }
+
+  public updateResolution(width: number, height: number): void {
+    this.uResolution.set(width, height);
   }
 
   private generateSkyTexture(width: number, height: number): THREE.DataTexture {
@@ -173,6 +173,18 @@ export class SkyDome {
     texture.needsUpdate = true;
 
     return texture;
+  }
+
+  private animTime = 0;
+
+  public update(dt: number, reducedMotion: boolean): void {
+    if (!reducedMotion) {
+      this.animTime += dt;
+    }
+    const uTime = this.material.uniforms['uTime'];
+    if (uTime) {
+      uTime.value = this.animTime;
+    }
   }
 
   public dispose(): void {

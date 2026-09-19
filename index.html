@@ -18,13 +18,75 @@
         tabindex="0"
       ></canvas>
 
+      <!-- HUD: Speed, Status/Direction, and Auto-drive Toggle -->
+      <header id="game-hud" class="game-hud" aria-label="Ride HUD">
+        <div class="hud-telemetry">
+          <div class="hud-card hud-speed">
+            <span class="hud-label">SPEED</span>
+            <div class="hud-value-row">
+              <span id="hud-speed-value" class="hud-value">0</span>
+              <span class="hud-unit">m/s</span>
+            </div>
+          </div>
+          <div class="hud-card hud-status">
+            <span class="hud-label">DIRECTION / STATUS</span>
+            <span id="hud-status-value" class="hud-status-badge">READY</span>
+          </div>
+        </div>
+
+        <div class="hud-controls">
+          <button
+            id="btn-autodrive"
+            class="hud-toggle-btn"
+            type="button"
+            aria-pressed="false"
+            aria-label="Toggle auto-drive mode"
+          >
+            <span class="toggle-indicator" aria-hidden="true"></span>
+            <span class="toggle-label">Auto-drive</span>
+            <span id="hud-autodrive-state" class="toggle-state">OFF</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Desktop Key Hints -->
+      <aside id="desktop-hints" class="desktop-hints" aria-label="Controls guide">
+        <div class="hint-item"><kbd>W</kbd>/<kbd>&uarr;</kbd> Forward</div>
+        <div class="hint-item"><kbd>S</kbd>/<kbd>&darr;</kbd> Reverse / Brake</div>
+        <div class="hint-item"><kbd>A</kbd>/<kbd>D</kbd> or <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> Steer</div>
+      </aside>
+
+      <!-- Mobile Hold Controls -->
+      <div id="touch-controls" class="touch-controls" aria-label="On-screen driving controls">
+        <button
+          id="touch-fwd"
+          class="touch-btn touch-btn-fwd"
+          type="button"
+          aria-label="Hold to drive forward"
+        >
+          <span class="touch-icon">&blacktriangle;</span>
+          <span class="touch-label">GAS</span>
+        </button>
+        <button
+          id="touch-rev"
+          class="touch-btn touch-btn-rev"
+          type="button"
+          aria-label="Hold to reverse"
+        >
+          <span class="touch-icon">&blacktriangledown;</span>
+          <span class="touch-label">REV</span>
+        </button>
+      </div>
+
+      <!-- Start instructions modal -->
       <section id="game-instructions" class="instructions" aria-live="polite">
         <h1 class="title">Night Ride</h1>
         <p class="tagline">An endless winding journey beneath the stars.</p>
         <div id="instructions-desc" class="controls-guide">
-          <p class="primary-controls">Steer with &larr; &rarr; or A / D, or drag</p>
-          <p class="start-hint">Press Enter or Space, or touch the screen, to begin</p>
-          <p class="forgiving-note">Calm &amp; forgiving: leaving the asphalt slows your bike and gently guides you back toward the road.</p>
+          <p class="primary-controls">Accelerate: W / &uarr; | Reverse: S / &darr; | Steer: A / D or &larr; &rarr;</p>
+          <p class="secondary-controls">Or drag screen to steer and hold on-screen throttle buttons</p>
+          <p class="start-hint">Press Enter or Space to cruise, or throttle up to begin</p>
+          <p class="forgiving-note">Manual driving is default. Toggle Auto-drive anytime for hands-free cruise. Leaving asphalt slows you down.</p>
         </div>
       </section>
 

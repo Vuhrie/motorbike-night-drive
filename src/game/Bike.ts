@@ -2,16 +2,18 @@ import * as THREE from 'three';
 import {
   CENTER_FORCE_THRESHOLD_1,
   CENTER_FORCE_THRESHOLD_2,
-  CRUISE_SPEED,
+  FORWARD_SPEED,
   LATERAL_CLAMP,
+  OFF_ROAD_FORWARD_SPEED,
+  OFF_ROAD_REVERSE_SPEED,
   OFF_ROAD_START,
-  OFF_ROAD_TARGET_SPEED,
   PALETTE,
-  STARTUP_EASE_DURATION,
+  REVERSE_LIMIT_DISTANCE,
+  REVERSE_SPEED,
   RideState,
   RoadPose,
 } from './config';
-import { clamp, damp, lerp, smootherstep, smoothstep } from './math';
+import { clamp, damp, lerp, smoothstep } from './math';
 
 const MAX_LEAN_RAD = (10 * Math.PI) / 180; // +/- 10 degrees
 const WHEEL_RADIUS = 0.32;
@@ -281,15 +283,25 @@ export class Bike {
     if (state.mode === 'ready') {
       state.speed = 0;
       state.targetSpeed = 0;
-    } else if (state.mode === 'running') {
-      const runTime = state.elapsedTime - state.startElapsedTime;
-      const cruiseTarget = lerp(CRUISE_SPEED, OFF_ROAD_TARGET_SPEED, state.offRoadAmount);
-      const ease =
-        runTime < STARTUP_EASE_DURATION
-          ? smootherstep(0, 1, clamp(runTime / STARTUP_EASE_DURATION, 0, 1))
-          : 1.0;
+      return;
+    }
 
-      state.targetSpeed = cruiseTarget * ease;
+    if (state.mode === 'running') {
+      const forwardTarget = lerp(FORWARD_SPEED, OFF_ROAD_FORWARD_SPEED, state.offRoadAmount);
+      const reverseTarget = lerp(REVERSE_SPEED, OFF_ROAD_REVERSE_SPEED, state.offRoadAmount);
+
+      if (state.driveMode === 'autodrive') {
+        state.targetSpeed = forwardTarget;
+      } else {
+        if (state.throttleInput === 1) {
+          state.targetSpeed = forwardTarget;
+        } else if (state.throttleInput === -1) {
+          state.targetSpeed = reverseTarget;
+        } else {
+          state.targetSpeed = 0;
+        }
+      }
+
       // Damping speed toward target around coefficient 8
       state.speed = damp(state.speed, state.targetSpeed, 8.0, dt);
     }
@@ -297,6 +309,15 @@ export class Bike {
 
   public updateDistance(state: RideState, dt: number): void {
     state.distanceAlongRoad += state.speed * dt;
+    if (state.distanceAlongRoad <= REVERSE_LIMIT_DISTANCE) {
+      state.distanceAlongRoad = REVERSE_LIMIT_DISTANCE;
+      if (state.speed < 0) {
+        state.speed = 0;
+      }
+      if (state.targetSpeed < 0) {
+        state.targetSpeed = 0;
+      }
+    }
   }
 
   public updateVisuals(

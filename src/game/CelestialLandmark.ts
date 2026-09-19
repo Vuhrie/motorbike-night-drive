@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { setSkyPosition } from './math';
+import { setCameraLocalNdcPoint } from './math';
 
-const MOON_AZIMUTH = THREE.MathUtils.degToRad(28);
-const MOON_ELEVATION = THREE.MathUtils.degToRad(27);
-const MOON_DISTANCE = 5.2;
+const MOON_NDC_X = 0.57;
+const MOON_NDC_Y = 0.70;
+const MOON_DEPTH = 8.05;
 const MOON_RADIUS = 0.34;
-const MOON_VISUAL_SCALE = 0.62;
+const MOON_VISUAL_SCALE = 0.70;
 
 export class CelestialLandmark {
   public readonly group: THREE.Group;
@@ -22,38 +22,41 @@ export class CelestialLandmark {
   private haloGeom: THREE.PlaneGeometry;
   private haloMat: THREE.ShaderMaterial;
 
-  constructor() {
+  constructor(skyTanHalfFov = 0.6008, skyAspect = 1.0) {
     this.group = new THREE.Group();
     this.group.position.set(0, 0, 0);
     this.group.rotation.set(0, 0, 0);
+    this.direction = new THREE.Vector3(0, 0, -1);
 
-    // Required moon position: azimuth +28 degrees, elevation +27 degrees, distance 5.2, radius 0.34
-    const moonPos = new THREE.Vector3();
-    setSkyPosition(moonPos, MOON_AZIMUTH, MOON_ELEVATION, MOON_DISTANCE);
-    this.direction = moonPos.clone().normalize();
-
-    // 1. Low-poly icy moon (no ring)
+    // 1. Low-poly crystalline icy moon
     this.moonGeom = new THREE.IcosahedronGeometry(MOON_RADIUS, 1);
     this.moonMat = new THREE.ShaderMaterial({
       vertexShader: `
         varying vec3 vNormal;
+        varying vec3 vViewDir;
         void main() {
           vNormal = normalMatrix * normal;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          vViewDir = -mvPos.xyz;
+          gl_Position = projectionMatrix * mvPos;
         }
       `,
       fragmentShader: `
   varying vec3 vNormal;
+  varying vec3 vViewDir;
 
   void main() {
     vec3 normalDirection = normalize(vNormal);
-    vec3 lightDirection = normalize(vec3(-0.32, 0.58, 0.75));
+    vec3 lightDirection = normalize(vec3(-0.35, 0.60, 0.70));
     float diffuse = max(dot(normalDirection, lightDirection), 0.0);
-    float lighting = 0.28 + diffuse * 0.72;
+    float rim = pow(1.0 - max(dot(normalDirection, normalize(vViewDir)), 0.0), 2.2);
 
-    vec3 shadowIce = vec3(0.20, 0.31, 0.50);
-    vec3 litIce = vec3(0.78, 0.94, 1.20);
-    vec3 color = mix(shadowIce, litIce, lighting);
+    vec3 shadowIce = vec3(0.22, 0.36, 0.58);
+    vec3 litIce = vec3(0.88, 0.96, 1.25);
+    vec3 rimIce = vec3(0.75, 0.95, 1.35);
+
+    vec3 color = mix(shadowIce, litIce, 0.25 + diffuse * 0.75);
+    color += rimIce * (rim * 0.45);
 
     gl_FragColor = vec4(color, 1.0);
 
@@ -62,23 +65,23 @@ export class CelestialLandmark {
   }
 `,
       transparent: true,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false,
       side: THREE.DoubleSide,
       fog: false,
-      toneMapped: true,
+      toneMapped: false,
     });
+    this.moonMat.forceSinglePass = true;
 
-    const moon = new THREE.Mesh(this.moonGeom, this.moonMat);
-    moon.scale.setScalar(MOON_VISUAL_SCALE);
-    moon.position.copy(moonPos);
-    moon.frustumCulled = false;
-    moon.renderOrder = 30;
-    moon.layers.set(0);
-    this.moonMesh = moon;
+    this.moonMesh = new THREE.Mesh(this.moonGeom, this.moonMat);
+    this.moonMesh.scale.setScalar(MOON_VISUAL_SCALE);
+    this.moonMesh.quaternion.identity();
+    this.moonMesh.frustumCulled = false;
+    this.moonMesh.renderOrder = 25;
+    this.moonMesh.layers.set(0);
     this.group.add(this.moonMesh);
 
-    // 2. Subtle halo (billboard facing origin, no ring)
+    // 2. Framed icy halo with soft corona
     this.haloGeom = new THREE.PlaneGeometry(1, 1);
     this.haloMat = new THREE.ShaderMaterial({
       vertexShader: `
@@ -93,34 +96,50 @@ export class CelestialLandmark {
         void main() {
           float radius = length(vUv - vec2(0.5)) * 2.0;
           if (radius > 1.0) discard;
-          float alpha = 1.0 - smoothstep(0.08, 1.0, radius);
-          alpha = alpha * alpha * 0.12;
-          vec3 color = vec3(0.34, 0.54, 0.88);
+          float innerCorona = pow(max(0.0, 1.0 - radius), 1.8);
+          float outerHalo = smoothstep(1.0, 0.0, radius);
+          float alpha = (innerCorona * 0.45 + outerHalo * 0.22) * 0.65;
+          vec3 color = vec3(0.40, 0.68, 1.05);
           gl_FragColor = vec4(color, alpha);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }
       `,
       transparent: true,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       fog: false,
-      toneMapped: true,
+      toneMapped: false,
     });
+    this.haloMat.forceSinglePass = true;
 
-    const halo = new THREE.Mesh(this.haloGeom, this.haloMat);
-    halo.scale.setScalar(
-      MOON_RADIUS * MOON_VISUAL_SCALE * 4.0,
+    this.haloMesh = new THREE.Mesh(this.haloGeom, this.haloMat);
+    this.haloMesh.scale.setScalar(
+      MOON_RADIUS * MOON_VISUAL_SCALE * 4.8,
     );
-    halo.position.copy(moonPos);
-    halo.lookAt(0, 0, 0);
-    halo.frustumCulled = false;
-    halo.renderOrder = 30;
-    halo.layers.set(0);
-    this.haloMesh = halo;
+    this.haloMesh.quaternion.identity();
+    this.haloMesh.frustumCulled = false;
+    this.haloMesh.renderOrder = 26;
+    this.haloMesh.layers.set(0);
     this.group.add(this.haloMesh);
+
+    this.updatePlacement(skyTanHalfFov, skyAspect);
+  }
+
+  public updatePlacement(skyTanHalfFov: number, skyAspect: number): void {
+    setCameraLocalNdcPoint(
+      this.moonMesh.position,
+      MOON_NDC_X,
+      MOON_NDC_Y,
+      MOON_DEPTH,
+      skyTanHalfFov,
+      skyAspect
+    );
+    this.haloMesh.position.copy(this.moonMesh.position);
+    this.haloMesh.quaternion.identity();
+    this.direction.copy(this.moonMesh.position).normalize();
   }
 
   public getMoonDirection(): THREE.Vector3 {

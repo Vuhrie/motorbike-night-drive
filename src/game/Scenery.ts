@@ -105,9 +105,9 @@ export class Scenery {
 
     // 4. Mountain bands
     this.mountainGroup = new THREE.Group();
-    this.mountainNear = this.createMountainRing(320, 75, 48, PALETTE.mountainNear, 101);
-    this.mountainMid = this.createMountainRing(460, 110, 40, PALETTE.mountainMid, 202);
-    this.mountainFar = this.createMountainRing(620, 155, 36, PALETTE.mountainFar, 303);
+    this.mountainNear = this.createMountainRing(320, 75, 48, PALETTE.mountainNear, 101, 1.0);
+    this.mountainMid = this.createMountainRing(460, 110, 40, PALETTE.mountainMid, 202, 0.93);
+    this.mountainFar = this.createMountainRing(620, 155, 36, PALETTE.mountainFar, 303, 0.78);
 
     this.mountainGroup.add(this.mountainFar);
     this.mountainGroup.add(this.mountainMid);
@@ -203,7 +203,8 @@ export class Scenery {
     baseHeight: number,
     segments: number,
     color: number,
-    salt: number
+    salt: number,
+    heightScale = 1.0
   ): THREE.Mesh {
     const geom = new THREE.BufferGeometry();
     const vertCount = (segments + 1) * 2;
@@ -211,25 +212,27 @@ export class Scenery {
     const idx = new Uint16Array(segments * 6);
 
     const angleStep = (Math.PI * 2) / segments;
+    const baseY = -15;
 
     for (let i = 0; i <= segments; i++) {
       const ang = i * angleStep;
       const hNoise = hash01(this.seed, i % segments, salt);
-      const h = baseHeight * (0.6 + 0.8 * hNoise);
+      const mountainHeight = baseHeight * (0.6 + 0.8 * hNoise);
+      const y = baseY + (mountainHeight - baseY) * heightScale;
 
       const cosA = Math.cos(ang);
       const sinA = Math.sin(ang);
 
-      // Base vertex (y = -10)
+      // Base vertex (y = -15)
       const v0 = i * 2;
       pos[v0 * 3 + 0] = cosA * radius;
-      pos[v0 * 3 + 1] = -15;
+      pos[v0 * 3 + 1] = baseY;
       pos[v0 * 3 + 2] = sinA * radius;
 
       // Peak vertex
       const v1 = v0 + 1;
       pos[v1 * 3 + 0] = cosA * (radius * 0.96);
-      pos[v1 * 3 + 1] = h;
+      pos[v1 * 3 + 1] = y;
       pos[v1 * 3 + 2] = sinA * (radius * 0.96);
 
       if (i < segments) {

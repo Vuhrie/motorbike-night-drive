@@ -38,3 +38,14 @@ export function setSkyPosition(
   out.y = radius * Math.sin(elevation);
   out.z = -radius * cosEl * Math.cos(azimuth);
 }
+
+export function setCameraLocalNdcPoint(
+  out: { set: (x: number, y: number, z: number) => unknown },
+  ndcX: number,
+  ndcY: number,
+  depth: number,
+  tanHalfFov: number,
+  aspect: number
+): void {
+  out.set(ndcX * depth * tanHalfFov * aspect, ndcY * depth * tanHalfFov, -depth);
+}
