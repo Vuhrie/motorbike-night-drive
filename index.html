@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#070b14" />
+    <meta name="description" content="Night Ride - A calm, endless low-poly motorbike ride beneath a starry night sky." />
+    <title>Night Ride</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <canvas
+        id="game-canvas"
+        aria-label="Night Ride interactive 3D motorcycle ride"
+        aria-describedby="instructions-desc"
+        tabindex="0"
+      ></canvas>
+
+      <section id="game-instructions" class="instructions" aria-live="polite">
+        <h1 class="title">Night Ride</h1>
+        <p class="tagline">An endless winding journey beneath the stars.</p>
+        <div id="instructions-desc" class="controls-guide">
+          <p class="primary-controls">Steer with &larr; &rarr; or A / D, or drag</p>
+          <p class="start-hint">Press Enter or Space, or touch the screen, to begin</p>
+          <p class="forgiving-note">Calm &amp; forgiving: leaving the asphalt slows your bike and gently guides you back toward the road.</p>
+        </div>
+      </section>
+
+      <div id="webgl-fallback" class="alert-overlay" role="alert" aria-live="assertive" hidden>
+        <div class="alert-card">
+          <h2>WebGL Not Available</h2>
+          <p>Night Ride requires WebGL support to render the 3D night scene. Please check your browser hardware acceleration settings or try another modern browser.</p>
+        </div>
+      </div>
+
+      <div id="context-lost-overlay" class="alert-overlay" role="alert" aria-live="assertive" hidden>
+        <div class="alert-card">
+          <h2>Graphics Context Paused</h2>
+          <p id="context-lost-msg">The 3D graphics context was interrupted. Attempting to restore...</p>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
